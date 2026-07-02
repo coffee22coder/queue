@@ -100,21 +100,19 @@ func (b *Broker) removeWaiterLocked(q *queueState, target *waiter) {
 
 func (b *Broker) Put(queue, value string) {
 	b.mu.Lock()
-	var w *waiter
-
+	defer b.mu.Unlock()
 	q := b.getQueueLocked(queue)
 	if len(q.waiters) > 0 {
-		w = q.waiters[0]
+		w := q.waiters[0]
 		q.waiters = q.waiters[1:]
-	} else {
-		q.messages = append(q.messages, value)
+		select {
+		case w.ch <- value:
+		default:
+			q.messages = append(q.messages, value)
+		}
+		return
 	}
-
-	b.mu.Unlock()
-
-	if w != nil {
-		w.ch <- value
-	}
+	q.messages = append(q.messages, value)
 }
 
 func (b *Broker) Get(queue string) (string, bool) {
